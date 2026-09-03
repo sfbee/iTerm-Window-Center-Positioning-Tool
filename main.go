@@ -1,14 +1,14 @@
 // itermcenter watches for new iTerm2 windows and sizes and centers them on
 // whichever screen they appear on. It works by polling iTerm2's own AppleScript/JXA
 // scripting bridge (via a small osascript helper) for the current list of
-// iTerm2 window IDs; any ID that wasn't present on the previous poll is
-// treated as "just created" and gets centered.
+// iTerm2 window IDs; any ID this process has never seen before is treated as
+// "just created" and gets centered.
 //
 // Subcommands:
 //
-//	itermcenter watch [-interval 250ms] [-width .72] [-height .72]
+//	itermcenter watch [-interval 250ms] [-width .72] [-height .72] [-hotkey]
 //	                                      run forever, size and center each new window
-//	itermcenter center [-all] [-width .72] [-height .72]
+//	itermcenter center [-all] [-id N] [-width .72] [-height .72]
 //	                                      size and center the current iTerm2 window,
 //	                                      or every iTerm2 window with -all
 //	itermcenter list                      print current iTerm2 windows as JSON
@@ -27,11 +27,21 @@ import (
 )
 
 type winInfo struct {
-	ID int     `json:"id"`
-	X  float64 `json:"x"`
-	Y  float64 `json:"y"`
-	W  float64 `json:"w"`
-	H  float64 `json:"h"`
+	ID     int     `json:"id"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	W      float64 `json:"w"`
+	H      float64 `json:"h"`
+	Hotkey bool    `json:"hotkey"`
+}
+
+// listResult carries the window list plus a count of windows that were present
+// in iTerm2's collection but could not be read. Callers need to know a read was
+// partial: silently dropping an unreadable window used to make it look closed,
+// and then "new" again on the next poll.
+type listResult struct {
+	Windows []winInfo `json:"windows"`
+	Failed  int       `json:"failed"`
 }
 
 // Windows are addressed through iTerm2's own AppleScript/JXA dictionary
@@ -50,15 +60,20 @@ function run() {
   var wins = it.windows;
   var n = wins.length;
   var out = [];
+  var failed = 0;
   for (var i = 0; i < n; i++) {
     try {
       var w = wins[i];
       var id = w.id();
       var b = w.bounds();
-      out.push({ id: id, x: b.x, y: b.y, w: b.width, h: b.height });
-    } catch (e) {}
+      var hk = false;
+      try { hk = w.isHotkeyWindow(); } catch (e) { hk = false; }
+      out.push({ id: id, x: b.x, y: b.y, w: b.width, h: b.height, hotkey: hk });
+    } catch (e) {
+      failed++;
+    }
   }
-  return JSON.stringify(out);
+  return JSON.stringify({ windows: out, failed: failed });
 }
 `
 
@@ -141,19 +156,45 @@ func runJXA(script string, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-func listWindows() ([]winInfo, error) {
+// errNotRunning reports whether the failure was just "iTerm2 isn't running".
+// That is a completely normal state (nothing to center), not an error worth
+// logging 4x a second, so watch() backs off instead of spamming.
+func errNotRunning(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "-2700") ||
+		strings.Contains(s, "-600") ||
+		strings.Contains(s, "can't be found") ||
+		strings.Contains(s, "isn't running") ||
+		strings.Contains(s, "is not running")
+}
+
+func listResultOf() (listResult, error) {
 	out, err := runJXA(listScript)
+	if err != nil {
+		return listResult{}, err
+	}
+	if out == "" {
+		// An empty payload tells us nothing about which windows exist. Report
+		// it as an error so callers hold on to the state they already have
+		// rather than concluding every window closed.
+		return listResult{}, fmt.Errorf("empty response from iTerm2")
+	}
+	var res listResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		return listResult{}, fmt.Errorf("parse windows: %w (raw=%q)", err, out)
+	}
+	return res, nil
+}
+
+func listWindows() ([]winInfo, error) {
+	res, err := listResultOf()
 	if err != nil {
 		return nil, err
 	}
-	if out == "" {
-		return nil, nil
-	}
-	var wins []winInfo
-	if err := json.Unmarshal([]byte(out), &wins); err != nil {
-		return nil, fmt.Errorf("parse windows: %w (raw=%q)", err, out)
-	}
-	return wins, nil
+	return res.Windows, nil
 }
 
 func centerWindowByID(id int, widthRatio, heightRatio float64) error {
@@ -188,42 +229,114 @@ func isPermissionError(err error) bool {
 	return strings.Contains(s, "not authorized") || strings.Contains(s, "-1743") || strings.Contains(s, "1002")
 }
 
-func watch(interval time.Duration, widthRatio, heightRatio float64) {
-	log.Printf("itermcenter: watching for new iTerm2 windows (poll every %s)", interval)
-	known := map[int]bool{}
-	firstRun := true
-	warnedPerm := false
+// throttle collapses a repeating error into one log line plus a periodic
+// "still happening" summary, so a long outage costs a few lines instead of
+// tens of thousands.
+type throttle struct {
+	lastSig  string
+	count    int
+	lastLog  time.Time
+	interval time.Duration
+}
+
+func (t *throttle) report(sig string, format string, args ...any) {
+	now := time.Now()
+	if sig != t.lastSig {
+		if t.count > 1 {
+			log.Printf("(previous message repeated %d more times)", t.count-1)
+		}
+		t.lastSig = sig
+		t.count = 1
+		t.lastLog = now
+		log.Printf(format, args...)
+		return
+	}
+	t.count++
+	if now.Sub(t.lastLog) >= t.interval {
+		log.Printf("still: "+format+" (%d times in the last %s)",
+			append(args, t.count, now.Sub(t.lastLog).Round(time.Second))...)
+		t.count = 1
+		t.lastLog = now
+	}
+}
+
+func (t *throttle) clear() {
+	if t.count > 1 {
+		log.Printf("(previous message repeated %d more times)", t.count-1)
+	}
+	t.lastSig = ""
+	t.count = 0
+}
+
+const idleInterval = 5 * time.Second
+
+func watch(interval time.Duration, widthRatio, heightRatio float64, includeHotkey bool) {
+	log.Printf("itermcenter: watching for new iTerm2 windows (poll every %s, size %.0f%%x%.0f%%)",
+		interval, widthRatio*100, heightRatio*100)
+
+	// seen holds every window ID this process has ever observed, and is never
+	// pruned. The previous implementation kept only the last poll's IDs and
+	// treated "absent last poll" as "brand new", so any transient hiccup in
+	// iTerm2's scripting bridge re-centered every open window — one window was
+	// re-centered 16 times in a single day. Window IDs are not reused, so
+	// remembering them all is both correct and cheap (a few thousand ints a
+	// year of heavy use).
+	seen := map[int]bool{}
+	first := true
+	th := &throttle{interval: 5 * time.Minute}
+	sleep := interval
 
 	for {
-		wins, err := listWindows()
+		time.Sleep(sleep)
+		sleep = interval
+
+		res, err := listResultOf()
 		if err != nil {
-			if isPermissionError(err) {
-				if !warnedPerm {
-					log.Printf("PERMISSION NEEDED: grant Automation access for itermcenter to control " +
-						"'iTerm2' (System Settings > Privacy & Security > Automation), then quit and " +
-						"relaunch itermcenter.")
-					warnedPerm = true
-				}
-			} else {
-				log.Printf("list error: %v", err)
+			switch {
+			case errNotRunning(err):
+				th.report("not-running", "iTerm2 isn't running; idling (polling every %s until it returns)", idleInterval)
+				sleep = idleInterval
+			case isPermissionError(err):
+				th.report("perm", "PERMISSION NEEDED: grant Automation access for itermcenter to control "+
+					"'iTerm2' (System Settings > Privacy & Security > Automation), then restart itermcenter.")
+				sleep = idleInterval
+			default:
+				th.report("list:"+err.Error(), "list error: %v", err)
 			}
-			time.Sleep(interval)
 			continue
 		}
+		th.clear()
 
-		current := map[int]bool{}
-		for _, w := range wins {
-			current[w.ID] = true
-			if !firstRun && !known[w.ID] {
-				log.Printf("new window id=%d detected, centering", w.ID)
-				if err := centerWindowByID(w.ID, widthRatio, heightRatio); err != nil {
-					log.Printf("center error for id=%d: %v", w.ID, err)
-				}
+		if res.Failed > 0 {
+			// Not fatal, and no longer dangerous: an unreadable window just
+			// isn't confirmed this round. Because seen is never pruned it
+			// cannot come back as a false "new window".
+			log.Printf("note: %d window(s) could not be read this poll", res.Failed)
+		}
+
+		for _, w := range res.Windows {
+			if seen[w.ID] {
+				continue
+			}
+			seen[w.ID] = true
+
+			if first {
+				continue // windows that already existed at startup are left alone
+			}
+			if w.Hotkey && !includeHotkey {
+				log.Printf("skipping hotkey window id=%d (pass -hotkey to include)", w.ID)
+				continue
+			}
+			log.Printf("new window id=%d, centering", w.ID)
+			if err := centerWindowByID(w.ID, widthRatio, heightRatio); err != nil {
+				log.Printf("center error for id=%d: %v", w.ID, err)
 			}
 		}
-		known = current
-		firstRun = false
-		time.Sleep(interval)
+
+		if first {
+			log.Printf("startup: ignoring %d existing window(s)", len(res.Windows))
+			first = false
+		}
 	}
 }
 
@@ -251,14 +364,16 @@ func main() {
 		interval := fs.Duration("interval", 250*time.Millisecond, "poll interval")
 		widthRatio := fs.Float64("width", .72, "fraction of the display's usable width")
 		heightRatio := fs.Float64("height", .72, "fraction of the display's usable height")
+		hotkey := fs.Bool("hotkey", false, "also center iTerm2's hotkey (dropdown) window")
 		fs.Parse(os.Args[2:])
 		validateRatio("width", *widthRatio)
 		validateRatio("height", *heightRatio)
-		watch(*interval, *widthRatio, *heightRatio)
+		watch(*interval, *widthRatio, *heightRatio, *hotkey)
 
 	case "center":
 		fs := flag.NewFlagSet("center", flag.ExitOnError)
 		all := fs.Bool("all", false, "center every iTerm2 window instead of just the active one")
+		id := fs.Int("id", 0, "center the window with this specific id")
 		widthRatio := fs.Float64("width", .72, "fraction of the display's usable width")
 		heightRatio := fs.Float64("height", .72, "fraction of the display's usable height")
 		fs.Parse(os.Args[2:])
@@ -284,23 +399,33 @@ func main() {
 			return
 		}
 
-		id, err := currentWindowID()
-		if err != nil {
-			fmt.Println("no iTerm2 windows found")
-			return
+		target := *id
+		if target == 0 {
+			// No explicit id: act on whatever window is focused right now.
+			// Hotkey windows are centered too — asking for it by hotkey is an
+			// explicit request, unlike the automatic watch path.
+			var err error
+			target, err = currentWindowID()
+			if err != nil {
+				fmt.Println("no iTerm2 windows found")
+				return
+			}
 		}
-		if err := centerWindowByID(id, *widthRatio, *heightRatio); err != nil {
-			log.Fatalf("center error id=%d: %v", id, err)
+		if err := centerWindowByID(target, *widthRatio, *heightRatio); err != nil {
+			log.Fatalf("center error id=%d: %v", target, err)
 		}
-		fmt.Printf("centered window id=%d\n", id)
+		fmt.Printf("centered window id=%d\n", target)
 
 	case "list":
-		wins, err := listWindows()
+		res, err := listResultOf()
 		if err != nil {
 			log.Fatalf("list error: %v", err)
 		}
-		b, _ := json.MarshalIndent(wins, "", "  ")
+		b, _ := json.MarshalIndent(res.Windows, "", "  ")
 		fmt.Println(string(b))
+		if res.Failed > 0 {
+			fmt.Fprintf(os.Stderr, "note: %d window(s) could not be read\n", res.Failed)
+		}
 
 	default:
 		usage()
