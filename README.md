@@ -1,14 +1,16 @@
 # itermcenter
 
-Sizes and centers iTerm2 windows. By default a window occupies 72% of the
+Sizes and centers iTerm2 windows. 
+
+By default, it will automatically adjust any new iTerm windows it detects when it's first created, adjusting the window to 72% of the
 usable width and height of the display it appears on.
 
-- **Background service** — a daemon polls iTerm2's own scripting bridge
-  every 250ms for the list of window IDs. A window is centered **exactly once,
-  the first time that window ID is ever seen**, on whichever screen it's on
-  (multi-monitor aware). New tabs, refocusing, minimizing, moving and resizing
-  are all left alone, as are windows that already existed when the daemon
-  started.
+I created this as an easy alternative to managing it through a script triggered by a profile, and it gives me a consistent terminal no matter the display configuration.
+
+It operates via:
+
+- **Background service** - This runs as a background service, watching and adjusting any new iTerm terminal windows it detects.
+  
 - **Keyboard shortcut** — no background process; a hotkey centers whichever
   iTerm2 window is focused right now, new or old. `--all` does every window.
 
@@ -17,7 +19,6 @@ You can install one or both.
 ## Install
 
 ```
-cd ~/personal-repos/itermcenter
 chmod +x install.sh
 ./install.sh
 ```
