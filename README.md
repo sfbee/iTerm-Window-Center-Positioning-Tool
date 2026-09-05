@@ -79,8 +79,11 @@ Open a new iTerm2 window with Cmd+N — it should resize and center within ~250m
 Opening a new *tab* should do nothing. Watch what it's doing:
 
 ```
-tail -f ~/personal-repos/itermcenter/itermcenter.log
+tail -f ~/Library/Logs/itermcenter/itermcenter.log
 ```
+
+The background service logs to `~/Library/Logs/itermcenter/` — standard
+output goes to `itermcenter.log`, standard error to `itermcenter.err.log`.
 
 ## Manual commands (no daemon needed)
 

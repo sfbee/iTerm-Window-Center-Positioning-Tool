@@ -12,6 +12,9 @@ cd "$(dirname "$0")"
 PLIST_NAME="com.stephen.itermcenter.plist"
 PLIST_DEST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 BIN_PATH="$(pwd)/itermcenter"
+LOG_DIR="$HOME/Library/Logs/itermcenter"
+LOG_OUT="$LOG_DIR/itermcenter.log"
+LOG_ERR="$LOG_DIR/itermcenter.err.log"
 SKHDRC="$HOME/.skhdrc"
 HOTKEY_ONE="cmd + ctrl - c"
 HOTKEY_ALL="cmd + shift + ctrl - c"
@@ -85,6 +88,7 @@ go build -o itermcenter .
 install_service() {
 	echo "==> Installing LaunchAgent"
 	mkdir -p "$HOME/Library/LaunchAgents"
+	mkdir -p "$LOG_DIR"
 	cat > "$PLIST_DEST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -104,9 +108,9 @@ install_service() {
 	<key>ProcessType</key>
 	<string>Interactive</string>
 	<key>StandardOutPath</key>
-	<string>$(pwd)/itermcenter.log</string>
+	<string>$LOG_OUT</string>
 	<key>StandardErrorPath</key>
-	<string>$(pwd)/itermcenter.err.log</string>
+	<string>$LOG_ERR</string>
 </dict>
 </plist>
 PLIST
@@ -116,7 +120,7 @@ PLIST
 	launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
 
 	echo "==> Service installed and running. It will also start at login."
-	echo "    Logs: $(pwd)/itermcenter.log and itermcenter.err.log"
+	echo "    Logs: $LOG_OUT and $LOG_ERR"
 	echo ""
 	echo "It centers a window exactly once, the first time that window is seen."
 	echo "New tabs, refocusing, minimizing and moving windows are all left alone."
@@ -127,7 +131,7 @@ PLIST
 	echo ""
 	echo "Test it: open a new iTerm2 window (Cmd+N) — it should snap to center"
 	echo "within about a quarter second. Watch it work with:"
-	echo "  tail -f $(pwd)/itermcenter.log"
+	echo "  tail -f $LOG_OUT"
 }
 
 # ensure_skhd makes skhd available, installing it via Homebrew when missing.
