@@ -6,12 +6,12 @@
 //
 // Subcommands:
 //
-//	itermcenter watch [-interval 250ms] [-width .72] [-height .72] [-hotkey]
+//	iterm-center-window watch [-interval 250ms] [-width .72] [-height .72] [-hotkey]
 //	                                      run forever, size and center each new window
-//	itermcenter center [-all] [-id N] [-width .72] [-height .72]
+//	iterm-center-window center [-all] [-id N] [-width .72] [-height .72]
 //	                                      size and center the current iTerm2 window,
 //	                                      or every iTerm2 window with -all
-//	itermcenter list                      print current iTerm2 windows as JSON
+//	iterm-center-window list             print current iTerm2 windows as JSON
 package main
 
 import (
@@ -53,7 +53,7 @@ type listResult struct {
 // Application("iTerm2") sidesteps that entirely: it gives a real, stable
 // window id() and a settable bounds() property, and needs no Accessibility
 // permission — only the standard one-time Automation prompt for
-// itermcenter to control iTerm2.
+// iterm-center-window to control iTerm2.
 const listScript = `
 function run() {
   var it = Application("iTerm2");
@@ -271,7 +271,7 @@ func (t *throttle) clear() {
 const idleInterval = 5 * time.Second
 
 func watch(interval time.Duration, widthRatio, heightRatio float64, includeHotkey bool) {
-	log.Printf("itermcenter: watching for new iTerm2 windows (poll every %s, size %.0f%%x%.0f%%)",
+	log.Printf("iterm-center-window: watching for new iTerm2 windows (poll every %s, size %.0f%%x%.0f%%)",
 		interval, widthRatio*100, heightRatio*100)
 
 	// seen holds every window ID this process has ever observed, and is never
@@ -297,8 +297,8 @@ func watch(interval time.Duration, widthRatio, heightRatio float64, includeHotke
 				th.report("not-running", "iTerm2 isn't running; idling (polling every %s until it returns)", idleInterval)
 				sleep = idleInterval
 			case isPermissionError(err):
-				th.report("perm", "PERMISSION NEEDED: grant Automation access for itermcenter to control "+
-					"'iTerm2' (System Settings > Privacy & Security > Automation), then restart itermcenter.")
+				th.report("perm", "PERMISSION NEEDED: grant Automation access for iterm-center-window to control "+
+					"'iTerm2' (System Settings > Privacy & Security > Automation), then restart iterm-center-window.")
 				sleep = idleInterval
 			default:
 				th.report("list:"+err.Error(), "list error: %v", err)
@@ -341,7 +341,7 @@ func watch(interval time.Duration, widthRatio, heightRatio float64, includeHotke
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: itermcenter <watch|center|list> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: iterm-center-window <watch|center|list> [flags]")
 	os.Exit(2)
 }
 

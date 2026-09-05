@@ -44,10 +44,10 @@ if you want to script it non-interactively:
 | `--yes`, `-y` | don't prompt, accept defaults |
 | `--no-install-deps` | never install skhd; print manual hotkey steps instead |
 
-**Permission required:** macOS will ask you to let itermcenter control
-`iTerm2` (this is what lets it read/move windows). Approve it. If you miss
-the prompt, grant it manually in **System Settings → Privacy & Security →
-Automation**.
+**Permission required:** macOS will ask you to let iterm-center-window
+control `iTerm2` (this is what lets it read/move windows). Approve it. If
+you miss the prompt, grant it manually in **System Settings → Privacy &
+Security → Automation**.
 
 ## Keyboard shortcut
 
@@ -69,9 +69,9 @@ Accessibility** and run `skhd --restart-service`.
 
 If Homebrew isn't available, you decline the install, or you pass
 `--no-install-deps`, the installer instead prints instructions for binding
-`itermcenter center` in Raycast, BetterTouchTool, Keyboard Maestro, Alfred or
-the built-in Shortcuts app. Re-running is safe: an existing `itermcenter`
-binding in `~/.skhdrc` is left alone.
+`iterm-center-window center` in Raycast, BetterTouchTool, Keyboard Maestro,
+Alfred or the built-in Shortcuts app. Re-running is safe: an existing
+`iterm-center-window` binding in `~/.skhdrc` is left alone.
 
 ## Try it
 
@@ -88,18 +88,18 @@ output goes to `itermcenter.log`, standard error to `itermcenter.err.log`.
 ## Manual commands (no daemon needed)
 
 ```
-./itermcenter list          # print current iTerm2 windows as JSON
-./itermcenter center        # center the focused iTerm2 window right now
-./itermcenter center --all  # center every iTerm2 window right now
-./itermcenter center --id N # center one specific window by id
+./iterm-center-window list          # print current iTerm2 windows as JSON
+./iterm-center-window center        # center the focused iTerm2 window right now
+./iterm-center-window center --all  # center every iTerm2 window right now
+./iterm-center-window center --id N # center one specific window by id
 ```
 
 Change the proportions with `--width` and `--height` (values greater than zero
 and no more than one):
 
 ```
-./itermcenter center --width .8 --height .75
-./itermcenter watch --width .8 --height .75
+./iterm-center-window center --width .8 --height .75
+./iterm-center-window watch --width .8 --height .75
 ```
 
 `watch` also takes `-hotkey` to include iTerm2's hotkey (dropdown) window,
@@ -115,11 +115,11 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.stephen.itermcenter.pl
 rm ~/Library/LaunchAgents/com.stephen.itermcenter.plist
 ```
 
-Remove the keyboard shortcuts by deleting the `itermcenter` lines from
+Remove the keyboard shortcuts by deleting the `iterm-center-window` lines from
 `~/.skhdrc`, then `skhd --reload`.
 
 Everything else lives in this directory, so `rm -rf` on it finishes the job.
-Optionally revoke itermcenter's entry in **System Settings → Privacy &
+Optionally revoke iterm-center-window's entry in **System Settings → Privacy &
 Security → Automation**.
 
 ## Notes
@@ -133,7 +133,7 @@ Security → Automation**.
   has ever seen and never prunes that set: IDs aren't reused, so a window can
   only ever be centered once.
 - Sizing uses the display's usable area, excluding the menu bar and Dock.
-- Poll interval defaults to 250ms (`itermcenter watch -interval 250ms`);
+- Poll interval defaults to 250ms (`iterm-center-window watch -interval 250ms`);
   lower it if you want centering to feel more instant, at the cost of a
   little more CPU/battery from the constant osascript calls.
 - When iTerm2 isn't running the daemon backs off to one poll every 5s and logs

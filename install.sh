@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 PLIST_NAME="com.stephen.itermcenter.plist"
 PLIST_DEST="$HOME/Library/LaunchAgents/$PLIST_NAME"
-BIN_PATH="$(pwd)/itermcenter"
+BIN_PATH="$(pwd)/iterm-center-window"
 LOG_DIR="$HOME/Library/Logs/itermcenter"
 LOG_OUT="$LOG_DIR/itermcenter.log"
 LOG_ERR="$LOG_DIR/itermcenter.err.log"
@@ -82,8 +82,8 @@ if [[ -z "$MODE" ]]; then
 	fi
 fi
 
-echo "==> Building itermcenter"
-go build -o itermcenter .
+echo "==> Building iterm-center-window"
+go build -o iterm-center-window .
 
 install_service() {
 	echo "==> Installing LaunchAgent"
@@ -125,7 +125,7 @@ PLIST
 	echo "It centers a window exactly once, the first time that window is seen."
 	echo "New tabs, refocusing, minimizing and moving windows are all left alone."
 	echo ""
-	echo "First time only: macOS will ask you to allow itermcenter to control"
+	echo "First time only: macOS will ask you to allow iterm-center-window to control"
 	echo "'iTerm2'. Approve it. If you miss the prompt, grant it in:"
 	echo "  System Settings > Privacy & Security > Automation"
 	echo ""
@@ -149,7 +149,7 @@ ensure_skhd() {
 
 	echo "==> skhd is not installed."
 	echo "    skhd is a small open-source hotkey daemon; it is what actually"
-	echo "    binds the key combo to the itermcenter command."
+	echo "    binds the key combo to the iterm-center-window command."
 	echo "    https://github.com/koekeishiya/skhd"
 	echo ""
 
@@ -183,8 +183,8 @@ ensure_skhd() {
 
 install_shortcut_skhd() {
 	echo "==> Installing keyboard shortcut via skhd"
-	if grep -q "itermcenter" "$SKHDRC" 2>/dev/null; then
-		echo "    $SKHDRC already has an itermcenter binding; leaving it alone."
+	if grep -q "iterm-center-window" "$SKHDRC" 2>/dev/null; then
+		echo "    $SKHDRC already has an iterm-center-window binding; leaving it alone."
 	else
 		# Keep any existing bindings; just append ours.
 		[[ -f "$SKHDRC" ]] && printf '\n' >> "$SKHDRC"
